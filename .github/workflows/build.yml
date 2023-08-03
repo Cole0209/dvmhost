@@ -72,7 +72,7 @@ jobs:
             libasio-dev
       - name: Build
         run: |
-          build_args='-DENABLE_TUI_SUPPORT=0'
+          build_args='-DENABLE_TUI_SUPPORT=1'
           if [[ "${{ github.event_name }}" == 'push' ]]; then
             build_args="$build_args -DCMAKE_BUILD_TYPE=${{ inputs.build_type }}"
             if [[ "${{ inputs.strip_symbols }}" == 'true' ]]; then
