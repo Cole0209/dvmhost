@@ -87,7 +87,7 @@ Control::Control(bool authoritative, uint32_t nac, uint32_t callHang, uint32_t q
     bool dumpPDUData, bool repeatPDU, bool dumpTSBKData, bool debug, bool verbose) :
     m_voice(nullptr),
     m_data(nullptr),
-    m_trunk(nullptr),
+    m_control(nullptr),
     m_authoritative(authoritative),
     m_supervisor(false),
     m_nac(nac),
@@ -99,10 +99,11 @@ Control::Control(bool authoritative, uint32_t nac, uint32_t callHang, uint32_t q
     m_legacyGroupGrnt(true),
     m_legacyGroupReg(false),
     m_duplex(duplex),
-    m_control(false),
+    m_enableControl(false),
     m_dedicatedControl(false),
     m_voiceOnControl(false),
     m_ackTSBKRequests(true),
+    m_disableNetworkGrant(false),
     m_disableNetworkHDU(false),
     m_idenTable(idenTable),
     m_ridLookup(ridLookup),
@@ -157,9 +158,9 @@ Control::Control(bool authoritative, uint32_t nac, uint32_t callHang, uint32_t q
 
     m_hangCount = callHang * 4U;
 
-    m_voice = new Voice(this, network, debug, verbose);
-    m_trunk = new Trunk(this, network, dumpTSBKData, debug, verbose);
-    m_data = new Data(this, network, dumpPDUData, repeatPDU, debug, verbose);
+    m_voice = new Voice(this, debug, verbose);
+    m_control = new ControlSignaling(this, dumpTSBKData, debug, verbose);
+    m_data = new Data(this, dumpPDUData, repeatPDU, debug, verbose);
 }
 
 /// <summary>
@@ -171,8 +172,8 @@ Control::~Control()
         delete m_voice;
     }
 
-    if (m_trunk != nullptr) {
-        delete m_trunk;
+    if (m_control != nullptr) {
+        delete m_control;
     }
 
     if (m_data != nullptr) {
@@ -229,25 +230,25 @@ void Control::setOptions(yaml::Node& conf, bool supervisor, const std::string cw
     m_tduPreambleCount = p25Protocol["tduPreambleCount"].as<uint32_t>(8U);
 
     yaml::Node rfssConfig = systemConf["config"];
-    m_trunk->m_patchSuperGroup = (uint32_t)::strtoul(rfssConfig["pSuperGroup"].as<std::string>("FFFE").c_str(), NULL, 16);
-    m_trunk->m_announcementGroup = (uint32_t)::strtoul(rfssConfig["announcementGroup"].as<std::string>("FFFE").c_str(), NULL, 16);
+    m_control->m_patchSuperGroup = (uint32_t)::strtoul(rfssConfig["pSuperGroup"].as<std::string>("FFFE").c_str(), NULL, 16);
+    m_control->m_announcementGroup = (uint32_t)::strtoul(rfssConfig["announcementGroup"].as<std::string>("FFFE").c_str(), NULL, 16);
 
     m_inhibitUnauth = p25Protocol["inhibitUnauthorized"].as<bool>(false);
     m_legacyGroupGrnt = p25Protocol["legacyGroupGrnt"].as<bool>(true);
     m_legacyGroupReg = p25Protocol["legacyGroupReg"].as<bool>(false);
 
-    m_trunk->m_verifyAff = p25Protocol["verifyAff"].as<bool>(false);
-    m_trunk->m_verifyReg = p25Protocol["verifyReg"].as<bool>(false);
+    m_control->m_verifyAff = p25Protocol["verifyAff"].as<bool>(false);
+    m_control->m_verifyReg = p25Protocol["verifyReg"].as<bool>(false);
 
-    m_trunk->m_noStatusAck = p25Protocol["noStatusAck"].as<bool>(false);
-    m_trunk->m_noMessageAck = p25Protocol["noMessageAck"].as<bool>(true);
-    m_trunk->m_unitToUnitAvailCheck = p25Protocol["unitToUnitAvailCheck"].as<bool>(true);
+    m_control->m_noStatusAck = p25Protocol["noStatusAck"].as<bool>(false);
+    m_control->m_noMessageAck = p25Protocol["noMessageAck"].as<bool>(true);
+    m_control->m_unitToUnitAvailCheck = p25Protocol["unitToUnitAvailCheck"].as<bool>(true);
 
-    m_trunk->m_sndcpChGrant = p25Protocol["sndcpGrant"].as<bool>(false);
+    m_control->m_sndcpChGrant = p25Protocol["sndcpGrant"].as<bool>(false);
 
     yaml::Node control = p25Protocol["control"];
-    m_control = control["enable"].as<bool>(false);
-    if (m_control) {
+    m_enableControl = control["enable"].as<bool>(false);
+    if (m_enableControl) {
         m_dedicatedControl = control["dedicated"].as<bool>(false);
     }
     else {
@@ -257,7 +258,7 @@ void Control::setOptions(yaml::Node& conf, bool supervisor, const std::string cw
     m_voiceOnControl = p25Protocol["voiceOnControl"].as<bool>(false);
 
     // if control channel is off for voice on control off
-    if (!m_control) {
+    if (!m_enableControl) {
         m_voiceOnControl = false;
     }
 
@@ -269,10 +270,29 @@ void Control::setOptions(yaml::Node& conf, bool supervisor, const std::string cw
     }
 
     m_ackTSBKRequests = control["ackRequests"].as<bool>(true);
-    m_trunk->m_ctrlTSDUMBF = !control["disableTSDUMBF"].as<bool>(false);
-    m_trunk->m_ctrlTimeDateAnn = control["enableTimeDateAnn"].as<bool>(false);
-    m_trunk->m_redundantGrant = control["redundantGrantTransmit"].as<bool>(false);
+    m_control->m_ctrlTSDUMBF = !control["disableTSDUMBF"].as<bool>(false);
+    m_control->m_ctrlTimeDateAnn = control["enableTimeDateAnn"].as<bool>(false);
+    m_control->m_redundantImmediate = control["redundantImmediate"].as<bool>(true);
+    m_control->m_redundantGrant = control["redundantGrantTransmit"].as<bool>(false);
 
+    m_allowExplicitSourceId = p25Protocol["allowExplicitSourceId"].as<bool>(true);
+
+    uint32_t ccBcstInterval = p25Protocol["control"]["interval"].as<uint32_t>(300U);
+    m_control->m_adjSiteUpdateInterval += ccBcstInterval;
+
+    m_control->m_disableGrantSrcIdCheck = p25Protocol["control"]["disableGrantSourceIdCheck"].as<bool>(false);
+
+    yaml::Node controlCh = rfssConfig["controlCh"];
+    m_notifyCC = controlCh["notifyEnable"].as<bool>(false);
+
+    // voice on control forcibly disables CC notification
+    if (m_voiceOnControl) {
+        m_notifyCC = false;
+    }
+
+    /*
+    ** Voice Silence and Frame Loss Thresholds
+    */
     m_voice->m_silenceThreshold = p25Protocol["silenceThreshold"].as<uint32_t>(p25::DEFAULT_SILENCE_THRESHOLD);
     if (m_voice->m_silenceThreshold > MAX_P25_VOICE_ERRORS) {
         LogWarning(LOG_P25, "Silence threshold > %u, defaulting to %u", p25::MAX_P25_VOICE_ERRORS, p25::DEFAULT_SILENCE_THRESHOLD);
@@ -293,11 +313,28 @@ void Control::setOptions(yaml::Node& conf, bool supervisor, const std::string cw
         LogWarning(LOG_P25, "Frame loss threshold may be excessive, default is %u, configured is %u", p25::DEFAULT_FRAME_LOSS_THRESHOLD, m_frameLossThreshold);
     }
 
+    /*
+    ** Network HDU and Grant Disables
+    */
+    m_disableNetworkGrant = p25Protocol["disableNetworkGrant"].as<bool>(false);
     m_disableNetworkHDU = p25Protocol["disableNetworkHDU"].as<bool>(false);
 
+    if (m_disableNetworkGrant && m_enableControl && m_dedicatedControl) {
+        LogWarning(LOG_P25, "Cannot disable network traffic grants for dedicated control configuration.");
+        m_disableNetworkGrant = false;
+    }
+
+    if (m_disableNetworkGrant && m_controlOnly) {
+        LogWarning(LOG_P25, "Cannot disable network traffic grants for control-only configuration.");
+        m_disableNetworkGrant = false;
+    }
+
+    /*
+    ** CC Service Class
+    */
     bool disableCompositeFlag = p25Protocol["disableCompositeFlag"].as<bool>(false);
     uint8_t serviceClass = P25_SVC_CLS_VOICE | P25_SVC_CLS_DATA;
-    if (m_control) {
+    if (m_enableControl) {
         serviceClass |= P25_SVC_CLS_REG;
     }
 
@@ -307,8 +344,10 @@ void Control::setOptions(yaml::Node& conf, bool supervisor, const std::string cw
         }
     }
 
+    /*
+    ** Site Data
+    */
     int8_t lto = (int8_t)systemConf["localTimeOffset"].as<int32_t>(0);
-
     m_siteData = SiteData(netId, sysId, rfssId, siteId, 0U, channelId, channelNo, serviceClass, lto);
     uint32_t valueTest = (netId >> 8);
     const uint32_t constValue = 0x17DC0U;
@@ -363,29 +402,14 @@ void Control::setOptions(yaml::Node& conf, bool supervisor, const std::string cw
         }
     });
 
-    uint32_t ccBcstInterval = p25Protocol["control"]["interval"].as<uint32_t>(300U);
-    m_trunk->m_adjSiteUpdateInterval += ccBcstInterval;
-
-    m_trunk->m_disableGrantSrcIdCheck = p25Protocol["control"]["disableGrantSourceIdCheck"].as<bool>(false);
-
-    yaml::Node controlCh = rfssConfig["controlCh"];
-    m_notifyCC = controlCh["notifyEnable"].as<bool>(false);
-
-    // voice on control forcibly disables CC notification
-    if (m_voiceOnControl) {
-        m_notifyCC = false;
-    }
-
-    m_allowExplicitSourceId = p25Protocol["allowExplicitSourceId"].as<bool>(true);
-
     if (printOptions) {
         LogInfo("    Silence Threshold: %u (%.1f%%)", m_voice->m_silenceThreshold, float(m_voice->m_silenceThreshold) / 12.33F);
         LogInfo("    Frame Loss Threshold: %u", m_frameLossThreshold);
 
-        if (m_control) {
+        if (m_enableControl) {
             LogInfo("    Voice on Control: %s", m_voiceOnControl ? "yes" : "no");
             LogInfo("    Ack Requests: %s", m_ackTSBKRequests ? "yes" : "no");
-            if (m_trunk->m_disableGrantSrcIdCheck) {
+            if (m_control->m_disableGrantSrcIdCheck) {
                 LogInfo("    Disable Grant Source ID Check: yes");
             }
         }
@@ -394,30 +418,36 @@ void Control::setOptions(yaml::Node& conf, bool supervisor, const std::string cw
             LogInfo("    Control Data Only: yes");
         }
 
-        LogInfo("    Patch Super Group: $%04X", m_trunk->m_patchSuperGroup);
-        LogInfo("    Announcement Group: $%04X", m_trunk->m_announcementGroup);
+        LogInfo("    Patch Super Group: $%04X", m_control->m_patchSuperGroup);
+        LogInfo("    Announcement Group: $%04X", m_control->m_announcementGroup);
 
         LogInfo("    Notify Control: %s", m_notifyCC ? "yes" : "no");
-        LogInfo("    Disable Network HDUs: %s", m_disableNetworkHDU ? "yes" : "no");
-        if (!m_trunk->m_ctrlTSDUMBF) {
+        if (m_disableNetworkHDU) {
+            LogInfo("    Disable Network HDUs: yes");
+        }
+        if (m_disableNetworkGrant) {
+            LogInfo("    Disable Network Grants: yes");
+        }
+        if (!m_control->m_ctrlTSDUMBF) {
             LogInfo("    Disable Multi-Block TSDUs: yes");
         }
-        LogInfo("    Time/Date Announcement TSBK: %s", m_trunk->m_ctrlTimeDateAnn ? "yes" : "no");
+        LogInfo("    Time/Date Announcement TSBK: %s", m_control->m_ctrlTimeDateAnn ? "yes" : "no");
 
         LogInfo("    Inhibit Unauthorized: %s", m_inhibitUnauth ? "yes" : "no");
         LogInfo("    Legacy Group Grant: %s", m_legacyGroupGrnt ? "yes" : "no");
         LogInfo("    Legacy Group Registration: %s", m_legacyGroupReg ? "yes" : "no");
-        LogInfo("    Verify Affiliation: %s", m_trunk->m_verifyAff ? "yes" : "no");
-        LogInfo("    Verify Registration: %s", m_trunk->m_verifyReg ? "yes" : "no");
+        LogInfo("    Verify Affiliation: %s", m_control->m_verifyAff ? "yes" : "no");
+        LogInfo("    Verify Registration: %s", m_control->m_verifyReg ? "yes" : "no");
 
-        LogInfo("    SNDCP Channel Grant: %s", m_trunk->m_sndcpChGrant ? "yes" : "no");
+        LogInfo("    SNDCP Channel Grant: %s", m_control->m_sndcpChGrant ? "yes" : "no");
 
-        LogInfo("    No Status ACK: %s", m_trunk->m_noStatusAck ? "yes" : "no");
-        LogInfo("    No Message ACK: %s", m_trunk->m_noMessageAck ? "yes" : "no");
-        LogInfo("    Unit-to-Unit Availability Check: %s", m_trunk->m_unitToUnitAvailCheck ? "yes" : "no");
+        LogInfo("    No Status ACK: %s", m_control->m_noStatusAck ? "yes" : "no");
+        LogInfo("    No Message ACK: %s", m_control->m_noMessageAck ? "yes" : "no");
+        LogInfo("    Unit-to-Unit Availability Check: %s", m_control->m_unitToUnitAvailCheck ? "yes" : "no");
         LogInfo("    Explicit Source ID Support: %s", m_allowExplicitSourceId ? "yes" : "no");
 
-        if (!m_trunk->m_redundantGrant) {
+        LogInfo("    Redundant Immediate: %s", m_control->m_redundantImmediate ? "yes" : "no");
+        if (m_control->m_redundantGrant) {
             LogInfo("    Redundant Grant Transmit: yes");
         }
     }
@@ -568,7 +598,7 @@ bool Control::processFrame(uint8_t* data, uint32_t len)
                 break;
             }
 
-            if (!m_dedicatedControl || m_trunk->m_convFallback)
+            if (!m_dedicatedControl || m_control->m_convFallback)
                 ret = m_voice->process(data, len);
             else {
                 if (m_voiceOnControl && m_affiliations.isChBusy(m_siteData.channelNo())) {
@@ -588,7 +618,7 @@ bool Control::processFrame(uint8_t* data, uint32_t len)
             break;
 
         case P25_DUID_TSDU:
-            ret = m_trunk->process(data, len);
+            ret = m_control->process(data, len);
             break;
 
         default:
@@ -653,7 +683,7 @@ uint32_t Control::getFrame(uint8_t* data)
 /// </summary>
 void Control::writeAdjSSNetwork()
 {
-    m_trunk->writeAdjSSNetwork();
+    m_control->writeAdjSSNetwork();
 }
 
 /// <summary>
@@ -681,7 +711,7 @@ bool Control::writeRF_VoiceEnd()
                 ret = true;
             }
 
-            if (!m_control && m_duplex) {
+            if (!m_enableControl && m_duplex) {
                 writeRF_Nulls();
             }
 
@@ -713,7 +743,7 @@ void Control::clock(uint32_t ms)
     }
 
     // if we have control enabled; do clocking to generate a CC data stream
-    if (m_control) {
+    if (m_enableControl) {
         if (m_ccRunning && !m_ccPacketInterval.isRunning()) {
             m_ccPacketInterval.start();
         }
@@ -800,10 +830,12 @@ void Control::clock(uint32_t ms)
     if (m_netState == RS_NET_AUDIO || m_netState == RS_NET_DATA) {
         m_networkWatchdog.clock(ms);
 
-        if (m_networkWatchdog.hasExpired()) {
+        if (m_networkWatchdog.isRunning() && m_networkWatchdog.hasExpired()) {
             if (m_netState == RS_NET_AUDIO) {
-                ::ActivityLog("P25", false, "network watchdog has expired, %.1f seconds, %u%% packet loss",
-                    float(m_voice->m_netFrames) / 50.0F, (m_voice->m_netLost * 100U) / m_voice->m_netFrames);
+                if (m_voice->m_netFrames > 0.0F) {
+                    ::ActivityLog("P25", false, "network watchdog has expired, %.1f seconds, %u%% packet loss",
+                        float(m_voice->m_netFrames) / 50.0F, (m_voice->m_netLost * 100U) / m_voice->m_netFrames);
+                }
             }
             else {
                 ::ActivityLog("P25", false, "network watchdog has expired");
@@ -852,8 +884,8 @@ void Control::clock(uint32_t ms)
         m_data->clock(ms);
     }
 
-    if (m_trunk != nullptr) {
-        m_trunk->clock(ms);
+    if (m_control != nullptr) {
+        m_control->clock(ms);
     }
 }
 
@@ -882,7 +914,7 @@ void Control::permittedTG(uint32_t dstId)
 /// <param name="grp"></param>
 void Control::grantTG(uint32_t srcId, uint32_t dstId, bool grp)
 {
-    if (!m_control) {
+    if (!m_enableControl) {
         return;
     }
 
@@ -890,7 +922,7 @@ void Control::grantTG(uint32_t srcId, uint32_t dstId, bool grp)
         LogMessage(LOG_P25, "network TG grant demand, srcId = %u, dstId = %u", srcId, dstId);
     }
 
-    m_trunk->writeRF_TSDU_Grant(srcId, dstId, 4U, grp);
+    m_control->writeRF_TSDU_Grant(srcId, dstId, 4U, grp);
 }
 
 /// <summary>
@@ -899,7 +931,7 @@ void Control::grantTG(uint32_t srcId, uint32_t dstId, bool grp)
 /// <param name="dstId"></param>
 void Control::releaseGrantTG(uint32_t dstId)
 {
-    if (!m_control) {
+    if (!m_enableControl) {
         return;
     }
 
@@ -921,7 +953,7 @@ void Control::releaseGrantTG(uint32_t dstId)
 /// <param name="dstId"></param>
 void Control::touchGrantTG(uint32_t dstId)
 {
-    if (!m_control) {
+    if (!m_enableControl) {
         return;
     }
 
@@ -950,8 +982,8 @@ bool Control::isBusy() const
 /// <param name="verbose">Flag indicating whether P25 verbose logging is enabled.</param>
 void Control::setDebugVerbose(bool debug, bool verbose)
 {
-    m_debug = m_voice->m_debug = m_data->m_debug = m_trunk->m_debug = debug;
-    m_verbose = m_voice->m_verbose = m_data->m_verbose = m_trunk->m_verbose = verbose;
+    m_debug = m_voice->m_debug = m_data->m_debug = m_control->m_debug = debug;
+    m_verbose = m_voice->m_verbose = m_data->m_verbose = m_control->m_verbose = verbose;
 }
 
 /// <summary>
@@ -1228,7 +1260,11 @@ void Control::processNetwork()
         case P25_DUID_TDU:
         case P25_DUID_TDULC:
             // is this an TDU with a grant demand?
-            if (duid == P25_DUID_TDU && m_control && grantDemand) {
+            if (duid == P25_DUID_TDU && m_enableControl && grantDemand) {
+                if (m_disableNetworkGrant) {
+                    return;
+                }
+
                 // validate source RID
                 if (!acl::AccessControl::validateSrcId(srcId)) {
                     return;
@@ -1247,7 +1283,7 @@ void Control::processNetwork()
                     LogMessage(LOG_NET, P25_TSDU_STR " remote grant demand, srcId = %u, dstId = %u", srcId, dstId);
                 }
 
-                if (!m_trunk->writeRF_TSDU_Grant(srcId, dstId, serviceOptions, true, true)) {
+                if (!m_control->writeRF_TSDU_Grant(srcId, dstId, serviceOptions, true, true)) {
                     LogError(LOG_NET, P25_TSDU_STR " call failure, network call not granted, dstId = %u", dstId);
                     return;
                 }
@@ -1259,7 +1295,7 @@ void Control::processNetwork()
             break;
 
         case P25_DUID_TSDU:
-            m_trunk->processNetwork(data.get(), frameLength, control, lsd, duid);
+            m_control->processNetwork(data.get(), frameLength, control, lsd, duid);
             break;
     }
 }
@@ -1283,10 +1319,10 @@ void Control::processFrameLoss()
             m_voice->m_rfFrames, m_voice->m_rfBits, m_voice->m_rfUndecodableLC, m_voice->m_rfErrs, float(m_voice->m_rfErrs * 100U) / float(m_voice->m_rfBits));
 
         m_affiliations.releaseGrant(m_voice->m_rfLC.getDstId(), false);
-        if (!m_control) {
+        if (!m_enableControl) {
             notifyCC_ReleaseGrant(m_voice->m_rfLC.getDstId());
         }
-        m_trunk->writeNet_TSDU_Call_Term(m_voice->m_rfLC.getSrcId(), m_voice->m_rfLC.getDstId());
+        m_control->writeNet_TSDU_Call_Term(m_voice->m_rfLC.getSrcId(), m_voice->m_rfLC.getDstId());
 
         writeRF_TDU(false);
         m_voice->m_lastDUID = P25_DUID_TDU;
@@ -1397,11 +1433,11 @@ void Control::notifyCC_TouchGrant(uint32_t dstId)
 /// <returns></returns>
 bool Control::writeRF_ControlData()
 {
-    if (!m_control)
+    if (!m_enableControl)
         return false;
 
     if (m_ccFrameCnt == 254U) {
-        m_trunk->writeAdjSSNetwork();
+        m_control->writeAdjSSNetwork();
         m_ccFrameCnt = 0U;
     }
 
@@ -1418,7 +1454,7 @@ bool Control::writeRF_ControlData()
     }
 
     if (m_netState == RS_NET_IDLE && m_rfState == RS_RF_LISTENING) {
-        m_trunk->writeRF_ControlData(m_ccFrameCnt, m_ccSeq, true);
+        m_control->writeRF_ControlData(m_ccFrameCnt, m_ccSeq, true);
 
         m_ccSeq++;
         if (m_ccSeq == maxSeq) {
@@ -1437,7 +1473,7 @@ bool Control::writeRF_ControlData()
 /// <returns></returns>
 bool Control::writeRF_ControlEnd()
 {
-    if (!m_control)
+    if (!m_enableControl)
         return false;
 
     m_txQueue.clear();
@@ -1445,7 +1481,7 @@ bool Control::writeRF_ControlEnd()
 
     if (m_netState == RS_NET_IDLE && m_rfState == RS_RF_LISTENING) {
         for (uint32_t i = 0; i < TSBK_PCH_CCH_CNT; i++) {
-            m_trunk->queueRF_TSBK_Ctrl(TSBK_OSP_MOT_PSH_CCH);
+            m_control->queueRF_TSBK_Ctrl(TSBK_OSP_MOT_PSH_CCH);
         }
 
         writeRF_Nulls();
