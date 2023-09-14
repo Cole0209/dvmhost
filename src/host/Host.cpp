@@ -612,10 +612,10 @@ int Host::run()
         ::LogWarning(LOG_HOST, "Fixed mode should be enabled when using dedicated P25 control!");
     }
 
-    if (!m_duplex && m_p25CCData) {
-        ::LogError(LOG_HOST, "Cannot have P25 control and simplex mode at the same time.");
-        g_killed = true;
-    }
+   // if (!m_duplex && m_p25CCData) {
+   //     ::LogError(LOG_HOST, "Cannot have P25 control and simplex mode at the same time.");
+   //     g_killed = true;
+   // }
 
     // DMR TSCC checks
     if (m_p25Enabled && m_dmrCtrlChannel) {
