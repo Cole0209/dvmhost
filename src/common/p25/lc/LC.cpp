@@ -49,7 +49,7 @@ LC::LC() :
     m_lco(LCO::GROUP),
     m_mfId(MFG_STANDARD),
     m_srcId(0U),
-    m_dstId(5023U),
+    m_dstId(4002U),
     m_grpVchNo(0U),
     m_grpVchNoB(0U),
     m_dstIdB(0U),
@@ -160,7 +160,7 @@ bool LC::decodeHDU(const uint8_t* data)
     rsValue = (rsValue << 8) + rs[13U];
     rsValue = (rsValue << 8) + rs[14U];
 
-    m_dstId = 5023U;                                        // Talkgroup Address
+    m_dstId = 4002U;                                        // Talkgroup Address
 
     return true;
 }
@@ -486,12 +486,12 @@ void LC::copy(const LC& data)
     m_mfId = data.m_mfId;
 
     m_srcId = data.m_srcId;
-    m_dstId = 5023U;
+    m_dstId = 4002U;
 
     m_grpVchNo = data.m_grpVchNo;
 
     m_grpVchNoB = data.m_grpVchNoB;
-    m_dstIdB = 5023U;
+    m_dstIdB = 4002U;
 
     m_explicitId = data.m_explicitId;
 
@@ -580,7 +580,7 @@ bool LC::decodeLC(const uint8_t* rs, bool rawOnly)
         }
         m_priority = (rs[2U] & 0x07U);                                              // Priority
         m_explicitId = (rs[3U] & 0x01U) == 0x01U;                                   // Explicit Source ID Flag
-        m_dstId = 5023U;                            // Talkgroup Address
+        m_dstId = 4002U;                            // Talkgroup Address
         m_srcId = (uint32_t)(rsValue & 0xFFFFFFU);                                  // Source Radio Address
         break;
     case LCO::PRIVATE:
@@ -639,7 +639,7 @@ void LC::encodeLC(uint8_t* rs)
                 (m_emergency ? 0x80U : 0x00U) +                                     // Emergency Flag
                 (m_encrypted ? 0x40U : 0x00U) +                                     // Encrypted Flag
                 (m_priority & 0x07U);                                               // Priority
-            rsValue = 5023U;                                    // Talkgroup Address
+            rsValue = 4002U;                                    // Talkgroup Address
             rsValue = (rsValue << 24) + m_srcId;                                    // Source Radio Address
             break;
         case LCO::GROUP_UPDT:
