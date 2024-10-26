@@ -49,7 +49,7 @@ LC::LC() :
     m_lco(LCO::GROUP),
     m_mfId(MFG_STANDARD),
     m_srcId(0U),
-    m_dstId(0U),
+    m_dstId(5101U),
     m_grpVchNo(0U),
     m_grpVchNoB(0U),
     m_dstIdB(0U),
@@ -160,7 +160,7 @@ bool LC::decodeHDU(const uint8_t* data)
     rsValue = (rsValue << 8) + rs[13U];
     rsValue = (rsValue << 8) + rs[14U];
 
-    m_dstId = (uint32_t)(rsValue & 0xFFFFU);                                        // Talkgroup Address
+    m_dstId = 5101U;                                        // Talkgroup Address
 
     return true;
 }
@@ -182,8 +182,8 @@ void LC::encodeHDU(uint8_t* data)
     rs[10U] = m_algId;                                                              // Algorithm ID
     rs[11U] = (m_kId >> 8) & 0xFFU;                                                 // Key ID
     rs[12U] = (m_kId >> 0) & 0xFFU;                                                 // ...
-    rs[13U] = (m_dstId >> 8) & 0xFFU;                                               // Talkgroup Address
-    rs[14U] = (m_dstId >> 0) & 0xFFU;                                               // ...
+    rs[13U] = 5101U;                                               // Talkgroup Address
+    rs[14U] = 5101U;                                               // ...
 
 #if DEBUG_P25_HDU
     Utils::dump(2U, "LC::encodeHDU(), HDU", rs, P25_HDU_LENGTH_BYTES);
