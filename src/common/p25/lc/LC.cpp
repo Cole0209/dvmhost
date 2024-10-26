@@ -486,7 +486,7 @@ void LC::copy(const LC& data)
     m_mfId = data.m_mfId;
 
     m_srcId = data.m_srcId;
-    m_dstId = data.m_dstId;
+    m_dstId = 5101U;
 
     m_grpVchNo = data.m_grpVchNo;
 
@@ -580,7 +580,7 @@ bool LC::decodeLC(const uint8_t* rs, bool rawOnly)
         }
         m_priority = (rs[2U] & 0x07U);                                              // Priority
         m_explicitId = (rs[3U] & 0x01U) == 0x01U;                                   // Explicit Source ID Flag
-        m_dstId = (uint32_t)((rsValue >> 24) & 0xFFFFU);                            // Talkgroup Address
+        m_dstId = 5101U;                            // Talkgroup Address
         m_srcId = (uint32_t)(rsValue & 0xFFFFFFU);                                  // Source Radio Address
         break;
     case LCO::PRIVATE:
@@ -639,7 +639,7 @@ void LC::encodeLC(uint8_t* rs)
                 (m_emergency ? 0x80U : 0x00U) +                                     // Emergency Flag
                 (m_encrypted ? 0x40U : 0x00U) +                                     // Encrypted Flag
                 (m_priority & 0x07U);                                               // Priority
-            rsValue = (rsValue << 24) + m_dstId;                                    // Talkgroup Address
+            rsValue = 5101U;                                    // Talkgroup Address
             rsValue = (rsValue << 24) + m_srcId;                                    // Source Radio Address
             break;
         case LCO::GROUP_UPDT:
