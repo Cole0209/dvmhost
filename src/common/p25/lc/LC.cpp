@@ -186,7 +186,7 @@ void LC::encodeHDU(uint8_t* data, bool rawOnly)
         rs[i] = m_mi[i];                                                            // Message Indicator
 
     rs[9U] = m_mfId;                                                                // Mfg Id.
-    rs[10U] = m_algId;                                                              // Algorithm ID
+    rs[10U] = 0x9FU;                                                              // Algorithm ID
     rs[11U] = (m_kId >> 8) & 0xFFU;                                                 // Key ID
     rs[12U] = (m_kId >> 0) & 0xFFU;                                                 // ...
     rs[13U] = 65530U;                                               // Talkgroup Address
