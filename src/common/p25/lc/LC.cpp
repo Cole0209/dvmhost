@@ -156,7 +156,7 @@ bool LC::decodeHDU(const uint8_t* data, bool rawOnly)
         m_kId = 0x0000U;
         if (m_encrypted) {
             m_encryptOverride = true;
-            m_encrypted = false;
+            m_encrypted = true;
         }
     }
 
