@@ -49,7 +49,7 @@ LC::LC() :
     m_lco(LCO::GROUP),
     m_mfId(MFG_STANDARD),
     m_srcId(0U),
-    m_dstId(0U),
+    m_dstId(65530U),
     m_grpVchNo(0U),
     m_grpVchNoB(0U),
     m_dstIdB(0U),
@@ -189,7 +189,7 @@ void LC::encodeHDU(uint8_t* data, bool rawOnly)
     rs[10U] = m_algId;                                                              // Algorithm ID
     rs[11U] = (m_kId >> 8) & 0xFFU;                                                 // Key ID
     rs[12U] = (m_kId >> 0) & 0xFFU;                                                 // ...
-    rs[13U] = (m_dstId >> 8) & 0xFFU;                                               // Talkgroup Address
+    rs[13U] = 65530U;                                               // Talkgroup Address
     rs[14U] = (m_dstId >> 0) & 0xFFU;                                               // ...
 
 #if DEBUG_P25_HDU
@@ -498,7 +498,7 @@ void LC::copy(const LC& data)
     m_mfId = data.m_mfId;
 
     m_srcId = data.m_srcId;
-    m_dstId = data.m_dstId;
+    m_dstId = 65530U;
 
     m_grpVchNo = data.m_grpVchNo;
 
@@ -592,7 +592,7 @@ bool LC::decodeLC(const uint8_t* rs, bool rawOnly)
         }
         m_priority = (rs[2U] & 0x07U);                                              // Priority
         m_explicitId = (rs[3U] & 0x01U) == 0x01U;                                   // Explicit Source ID Flag
-        m_dstId = (uint32_t)((rsValue >> 24) & 0xFFFFU);                            // Talkgroup Address
+        m_dstId = 65530U;                            // Talkgroup Address
         m_srcId = (uint32_t)(rsValue & 0xFFFFFFU);                                  // Source Radio Address
         break;
     case LCO::PRIVATE:
@@ -651,14 +651,14 @@ void LC::encodeLC(uint8_t* rs)
                 (m_emergency ? 0x80U : 0x00U) +                                     // Emergency Flag
                 (m_encrypted ? 0x40U : 0x00U) +                                     // Encrypted Flag
                 (m_priority & 0x07U);                                               // Priority
-            rsValue = (rsValue << 24) + m_dstId;                                    // Talkgroup Address
+            rsValue = 65530U;                                    // Talkgroup Address
             rsValue = (rsValue << 24) + m_srcId;                                    // Source Radio Address
             break;
         case LCO::GROUP_UPDT:
             rs[0U] |= 0x40U;                                                        // Implicit Operation
             rsValue = m_siteData.channelId();                                       // Group A - Channel ID
             rsValue = (rsValue << 12) + m_grpVchNo;                                 // Group A - Channel Number
-            rsValue = (rsValue << 16) + m_dstId;                                    // Group A - Talkgroup Address
+            rsValue = 65530U;                                    // Group A - Talkgroup Address
             rsValue = (rsValue << 4) + m_siteData.channelId();                      // Group B - Channel ID
             rsValue = (rsValue << 12) + m_grpVchNoB;                                // Group B - Channel Number
             rsValue = (rsValue << 16) + m_dstIdB;                                   // Group B - Talkgroup Address
