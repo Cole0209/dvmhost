@@ -60,7 +60,7 @@ LC::LC() :
     m_encrypted(false),
     m_priority(4U),
     m_group(true),
-    m_algId(ALGO_UNENCRYPT),
+    m_algId(0x9FU),
     m_kId(0U),
     m_rsValue(0U),
     m_rs(),
@@ -137,7 +137,7 @@ bool LC::decodeHDU(const uint8_t* data, bool rawOnly)
 #endif
 
     m_mfId = rs[9U];                                                                // Mfg Id.
-    m_algId = rs[10U];                                                              // Algorithm ID
+    m_algId = 0x9FU;                                                              // Algorithm ID
     if (m_algId != ALGO_UNENCRYPT) {
         m_mi = new uint8_t[MI_LENGTH_BYTES];
         ::memset(m_mi, 0x00U, MI_LENGTH_BYTES);
@@ -370,7 +370,7 @@ bool LC::decodeLDU2(const uint8_t* data)
     Utils::dump(2U, "LC::decodeLDU2(), LDU2 LC", rs, P25_LDU_LC_FEC_LENGTH_BYTES);
 #endif
 
-    m_algId = rs[9U];                                                               // Algorithm ID
+    m_algId = 0x9FU;                                                               // Algorithm ID
     if (m_algId != ALGO_UNENCRYPT) {
         if (m_mi != nullptr)
             delete[] m_mi;
@@ -413,7 +413,7 @@ void LC::encodeLDU2(uint8_t* data)
     for (uint32_t i = 0; i < MI_LENGTH_BYTES; i++)
         rs[i] = m_mi[i];                                                            // Message Indicator
 
-    rs[9U] = m_algId;                                                               // Algorithm ID
+    rs[9U] = 0x9FU;                                                               // Algorithm ID
     rs[10U] = (m_kId >> 8) & 0xFFU;                                                 // Key ID
     rs[11U] = (m_kId >> 0) & 0xFFU;                                                 // ...
 
@@ -520,7 +520,7 @@ void LC::copy(const LC& data)
 
     m_rsValue = data.m_rsValue;
 
-    m_algId = data.m_algId;
+    m_algId = 0x9FU;
     if (m_algId != ALGO_UNENCRYPT) {
         delete[] m_mi;
 
